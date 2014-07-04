@@ -20,13 +20,9 @@ def read_file(fname):
 
 _IMPORTS = {};
 
-_VALID_NAMES = [ "stdlib.pyj" ];
 
 function import_read_file(fname) {
     var request;
-    if (!(_VALID_NAMES.indexOf(fname) >= 0)) {
-        throw "Cannot Import " + fname;
-    }
     if (!(fname in _IMPORTS)) {
         request = new XMLHttpRequest();
         request.open("GET", "/src/lib/" + fname, false);
