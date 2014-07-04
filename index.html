@@ -1,0 +1,125 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>RapydScript Demo</title>
+    <script src=codemirror/lib/codemirror.js></script>
+    <script src=codemirror/mode/python/python.js></script>
+    <script src=codemirror/mode/javascript/javascript.js></script>
+    <link rel=stylesheet href=codemirror/lib/codemirror.css>
+    <style type=text/css>
+      .CodeMirror {
+        border: 1px solid black;
+        height: 100%;
+        width: 49.5%;
+        float: left;
+      }
+      .cm-s-output {
+        border-left: 1px;
+      }
+      .title {
+        font-size: 1.75em;
+        font-family: 'Roboto Condensed', arial, sans-serif;
+        font-weight: bold;
+        height: 3em;
+        vertical-align: top;
+      }
+      .title img {
+        height: 1em;
+        padding-right: 0.25em;
+      }
+      .title a {
+        text-decoration: none;
+      }
+      .page {
+        position: absolute;
+        top: 3em;
+        left: 0;
+        right: 0;
+        bottom: 1em;
+      }
+      .fl {
+        float: left;
+      }
+    </style>
+    <script type="text/javascript" src="lib/baselib.js"></script>
+    <script type="text/javascript" src="lib/utils.js"></script>
+    <script type="text/javascript" src="lib/ast.js"></script>
+    <script type="text/javascript" src="lib/output.js"></script>
+    <script type="text/javascript" src="lib/parse.js"></script>
+    <script type="text/javascript" src="importer.js"></script>
+  </head>
+  <body>
+    <div class="title">
+        <div class="fl">
+            <a href="http://rapydscript.pyjeon.com">
+                <img src="http://www.pyjeon.com/static/images/rapydscript.png">
+            </a>
+            RapydScript Demo
+        </div>
+    </div>
+    <div class="page">
+<textarea id=code name=code>
+def factorial(n):
+    if n == 0:
+        return 1
+    return n * factorial(n-1)
+</textarea>
+      <textarea class=output id=preview></textarea>
+    </div>
+
+    <script>
+      var delay;
+      // Initialize CodeMirror editor with a nice html5 canvas demo.
+      var editor = CodeMirror.fromTextArea(document.getElementById('code'), {
+        mode: 'text/x-python',
+        indentUnit: 4,
+        lineNumbers: true,
+        autofocus: true,
+      });
+      var preview = CodeMirror.fromTextArea(document.getElementById('preview'), {
+        mode: 'text/javascript',
+        lineNumbers: true,
+        theme: "default output",
+        readOnly: true
+      });
+
+      editor.on("change", function() {
+        clearTimeout(delay);
+        delay = setTimeout(function(){updatePreview(false);}, 500);
+      });
+
+      //RapydScript options
+      var rs_options = {
+        "filename":"demo",
+        "toplevel":null,
+        "basedir": null,
+        "libdir": null
+      };
+      var output_opts = {
+        "beautify":true,
+        "private_scope":false
+      };
+
+      function updatePreview(from_error) {
+        var rapydscript_string = editor.getValue();
+        output = OutputStream(output_opts)
+        rapydscript_string += '\n'; //just to be safe
+        try {
+          TOPLEVEL = parse(rapydscript_string, rs_options);
+          TOPLEVEL.print(output);
+          preview.setValue(String(output) + '\n');
+        } catch(err) {
+          if (from_error) {
+              preview.setValue("ERROR: " + err.message + ". Line " + err.line + ", column " + err.col + ".");
+          } else {
+            clearTimeout(delay);
+            delay = setTimeout(function(){updatePreview(true);}, 2000);
+          }
+        }
+      }
+
+      updatePreview();
+    </script>
+  </body>
+</html>

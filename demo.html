@@ -1,0 +1,42 @@
+<html>
+<head>
+<script type="text/javascript" src="lib/baselib.js"></script>
+<script type="text/javascript" src="lib/utils.js"></script>
+<script type="text/javascript" src="lib/ast.js"></script>
+<script type="text/javascript" src="lib/output.js"></script>
+<script type="text/javascript" src="lib/parse.js"></script>
+ <script type="text/javascript">
+
+    var RS_OPTIONS = {
+        "filename":"demo",
+        "toplevel":null,
+        "basedir": null,
+        "libdir": null
+    };
+    OUTPUT_OPTS = {
+        "beautify":true,
+        "private_scope":false
+    };
+
+    function compile_rapydscript(rs_input) {
+        output = OutputStream(OUTPUT_OPTS)
+        test_input += '\n'; //just to be safe
+        try {
+            TOPLEVEL = parse(rs_input, RS_OPTIONS);
+            TOPLEVEL.print(output);
+            var js_code = String(output)
+            document.write(js_code);
+            console.log(js_code);
+        } catch(err) {
+            document.write(err.message);
+            console.log(err.message);
+        }
+    }
+    var test_input = 'def hi():\n\ta = 1\n';
+    compile_rapydscript(test_input);
+</script>
+</head>
+<body>
+</body>
+</html>
+
