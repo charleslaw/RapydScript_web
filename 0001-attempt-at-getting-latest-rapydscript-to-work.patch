@@ -1,5 +1,5 @@
 From: Charles Law <charles.law@gmail.com>
-Date: Wed, 9 Apr 2014 21:58:41 -0700
+Date: Wed, 7 Jan 2015 21:35:36 -0700
 Subject: [PATCH] attempt at getting latest rapydscript to work
 
 ---
@@ -7,10 +7,10 @@ Subject: [PATCH] attempt at getting latest rapydscript to work
  1 files changed, 5 insertions(+), 30 deletions(-)
 
 diff --git a/lib/parse.js b/lib/parse.js
-index fb78549..e788572 100644
+index f602aa3..ebb2e45 100644
 --- a/lib/parse.js
 +++ b/lib/parse.js
-@@ -1177,36 +1177,11 @@ function parse($TEXT, options) {
+@@ -1208,36 +1208,11 @@ function parse($TEXT, options) {
          }
          file = tmp.name + file;
          contents = null;

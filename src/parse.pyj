@@ -100,7 +100,7 @@ RE_HEX_NUMBER = /^0x[0-9a-f]+$/i
 RE_OCT_NUMBER = /^0[0-7]+$/
 RE_DEC_NUMBER = /^\d*\.?\d*(?:e[+-]?\d*(?:\d\.?|\.?\d)\d*)?$/i
 
-OPERATORS = makePredicate([ "in", "instanceof", "typeof", "new", "void", "del", "++", "--", "+", "-", "not", "~", "&", "|", "^", "*", "/", "%", ">>", "<<", ">>>", "<", ">", "<=", ">=", "==", "is", "!=", "!==", "?", "=", "+=", "-=", "/=", "*=", "%=", ">>=", "<<=", ">>>=", "|=", "^=", "&=", "and", "or", "til", "to", "@" ])
+OPERATORS = makePredicate([ "in", "instanceof", "typeof", "new", "void", "del", "++", "--", "+", "-", "not", "~", "&", "|", "^", "**", "*", "/", "%", ">>", "<<", ">>>", "<", ">", "<=", ">=", "==", "is", "!=", "!==", "?", "=", "+=", "-=", "/=", "*=", "%=", ">>=", "<<=", ">>>=", "|=", "^=", "&=", "and", "or", "til", "to", "@" ])
 
 OP_MAP = {
     'or': "||",
@@ -108,7 +108,9 @@ OP_MAP = {
     'not': "!",
     'del': "delete",
     'None': "null",
-    'is': "==="
+    'is': "===",
+    '==': "===",
+    '!=': "!=="
 }
 
 WHITESPACE_CHARS = makePredicate(characters(" \u00a0\n\r\t\f\u000b\u200b\u180e\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u202f\u205f\u3000"));
@@ -184,7 +186,7 @@ def js_error(message, filename, line, col, pos):
     raise new JS_Parse_Error(message, line, col, pos)
 
 def is_token(token, type, val):
-    return token.type == type and (val == None or token.value == val)
+    return token.type == type and (val == None or val == undefined or token.value == val)
 
 EX_EOF = {}
 
@@ -435,6 +437,7 @@ def tokenizer($TEXT, filename):
                     tmp = S.text.substring(S.pos, i)
                     S.pos = i + 3
                     while tmp.length:
+                        # parse escaped characters
                         if tmp[0] == "\\":
                             tmp = tmp.substr(1)
                             ret += read_escaped_char(True, def():
@@ -446,7 +449,11 @@ def tokenizer($TEXT, filename):
                         else:
                             ret += tmp[0]
                             tmp = tmp.substr(1)
-                    S.line += ret.match(/\n/g).length
+
+                    # add traversed lines to the counter
+                    find_newlines = ret.match(/\n/g)
+                    if find_newlines:
+                        S.line += find_newlines.length
                     return token("string", ret)
             else:
                 return token("string", "")
@@ -611,7 +618,7 @@ def tokenizer($TEXT, filename):
                     raise
 
     def next_token(force_regexp):
-        if force_regexp != None:
+        if force_regexp not in (None, undefined):
             return read_regexp(force_regexp)
 
         indent = parse_whitespace()
@@ -699,6 +706,7 @@ PRECEDENCE = def(a, ret):
             ret[b[j]] = i+1
     return ret
 .call(this, [
+    # lowest precedence
     [ "||" ],
     [ "&&" ],
     [ "|" ],
@@ -706,8 +714,11 @@ PRECEDENCE = def(a, ret):
     [ "&" ],
     [ "==", "===", "!=", "!==" ],
     [ "<", ">", "<=", ">=", "in", "instanceof" ],
-    [ ">>", "<<", ">>>" ], [ "+", "-" ],
-    [ "*", "/", "%" ]
+    [ ">>", "<<", ">>>" ],
+    [ "+", "-" ],
+    [ "*", "/", "%" ],
+    [ "**" ]
+    # highest precedence
 ], {})
 
 STATEMENTS_WITH_LABELS = array_to_hash([ "for", "do", "while", "switch" ])
@@ -762,9 +773,10 @@ def parse($TEXT, options):
         return S.prev
 
     def croak(msg, line, col, pos):
+        # note: undefined means nothing was passed in, None/null means a null value was passed in
         ctx = S.input.context()
-        js_error(msg, ctx.filename, (line != None ? line : ctx.tokline),
-                 (col != None ? col : ctx.tokcol), (pos != None ? pos : ctx.tokpos))
+        js_error(msg, ctx.filename, (line != undefined ? line : ctx.tokline),
+                 (col != undefined ? col : ctx.tokcol), (pos != undefined ? pos : ctx.tokpos))
 
     def token_error(token, msg):
         croak(msg, token.line, token.col)
@@ -806,53 +818,113 @@ def parse($TEXT, options):
             expr.end = end
             return expr
 
+    def is_nested_comparison(stmt):
+        """
+        Check if the statement is a nested comparison
+        """
+        comparators = {
+            "<": True,
+            ">": True,
+            "<=": True,
+            ">=": True,
+            "==": True,
+            "!=": True,
+            "===": True,
+            "!==": True
+        }
+        if isinstance(stmt, AST_Binary) and stmt.operator in comparators \
+                and isinstance(stmt.left, AST_Binary) and stmt.left.operator in comparators:
+            return True
+        else:
+            return False
+
+
     def scan_for_local_vars(body, is_module):
+        """
+        Pick out all variables being assigned to from within this scope, we'll mark them as local
+
+        body        body to be scanned
+        is_module   if this body belongs to a module object and variables should be exposed
+        """
         vars = []
         if isinstance(body, Array):
+            # this is a body of statements
             for stmt in dir(body):
+                # skip inner scopes
                 if isinstance(body[stmt], AST_Scope):
                     if is_module and body[stmt].name:
                         vars.push(body[stmt].name)
                     continue
 
+                # recursive descent into conditional, loop and exception bodies
                 [ "body", "alternative" ].forEach(def(option):
                     nonlocal vars
                     opt = body[stmt][option]
                     if opt:
                         vars = vars.concat(scan_for_local_vars(opt, is_module))
 
-                    if opt and opt.operator == "=" and not (isinstance(opt.right, AST_Scope)):
+                    if isinstance(opt, AST_Assign) and not (isinstance(opt.right, AST_Scope)):
                         vars = vars.concat(scan_for_local_vars(opt.right, is_module))
                 )
 
-                # pick up iterators from loops
                 if not is_module:
+                    # pick up iterators from loops
                     if isinstance(body[stmt], AST_ForIn):
                         if isinstance(body[stmt].init, AST_Array):
+                            # iteration via implicit tuple
                             vars.push("_$rapyd$_Unpack")
                             body[stmt].init.elements.forEach(def(elem):
                                 if vars.indexOf(elem.name) == -1:
                                     vars.push(elem.name)
                             )
                         elif vars.indexOf(body[stmt].init.name) == -1:
+                            # iteration via a single variable
                             vars.push(body[stmt].init.name)
                     elif isinstance(body[stmt], AST_DWLoop):
                         vars = vars.concat(scan_for_local_vars(body[stmt], is_module))
+                    elif isinstance(body[stmt], AST_If) \
+                            and is_nested_comparison(body[stmt].condition):
+                        # if statement condition with complex comparison
+                        vars.push("_$rapyd$_Temp")
+                    elif isinstance(body[stmt], AST_Exit) and is_nested_comparison(body[stmt].value):
+                        # returning a nested conditional
+                        vars.push("_$rapyd$_Temp")
 
         elif body.body:
+            # recursive descent into wrapper statements that contain body blocks
             vars = vars.concat(scan_for_local_vars(body.body, is_module))
             if body.alternative:
                 vars = vars.concat(scan_for_local_vars(body.alternative, is_module))
 
         elif isinstance(body, AST_Assign):
+            # this is a single assignment operator
             if isinstance(body.left, AST_Array):
+                # assignment to an implicit tuple
                 vars.push("_$rapyd$_Unpack")
                 body.left.elements.forEach(def(elem):
                     if not (isinstance(elem, AST_PropAccess)) and vars.indexOf(elem.name) == -1:
                         vars.push(elem.name)
                 )
             elif body.left.name and vars.indexOf(body.left.name) == -1:
+                # assignment to a single variable
                 vars.push(body.left.name)
+
+            if is_nested_comparison(body.right):
+                # assignment of nested conditional result to a variable
+                vars.push("_$rapyd$_Temp")
+            elif isinstance(body.right, AST_Conditional) and is_nested_comparison(body.right.condition):
+                # assignment of a ternary condition result that uses nested conditional
+                vars.push("_$rapyd$_Temp")
+
+        elif isinstance(body, AST_Conditional) and is_nested_comparison(body.condition):
+            # ternary condition that uses nested conditional and triggers other logic
+            # this is basically a really ugly way to write an if/else
+            vars.push("_$rapyd$_Temp")
+
+        elif is_nested_comparison(body):
+            # statement itself is a stand-alone nested conditional - programmatically this would probably
+            # be a useless statement
+            vars.push("_$rapyd$_Temp")
 
         return vars
 
