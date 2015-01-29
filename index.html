@@ -106,6 +106,7 @@ def factorial(n):
         output = OutputStream(output_opts)
         rapydscript_string += '\n'; //just to be safe
         try {
+          BASELIB = {}
           TOPLEVEL = parse(rapydscript_string, rs_options);
           TOPLEVEL.print(output);
           preview.setValue(String(output) + '\n');
