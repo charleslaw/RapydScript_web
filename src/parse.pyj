@@ -100,7 +100,57 @@ RE_HEX_NUMBER = /^0x[0-9a-f]+$/i
 RE_OCT_NUMBER = /^0[0-7]+$/
 RE_DEC_NUMBER = /^\d*\.?\d*(?:e[+-]?\d*(?:\d\.?|\.?\d)\d*)?$/i
 
-OPERATORS = makePredicate([ "in", "instanceof", "typeof", "new", "void", "del", "++", "--", "+", "-", "not", "~", "&", "|", "^", "**", "*", "/", "%", ">>", "<<", ">>>", "<", ">", "<=", ">=", "==", "is", "!=", "!==", "?", "=", "+=", "-=", "/=", "*=", "%=", ">>=", "<<=", ">>>=", "|=", "^=", "&=", "and", "or", "til", "to", "@" ])
+OPERATORS = makePredicate([
+    "in",
+    "instanceof",
+    "typeof",
+    "new",
+    "void",
+    "del",
+    "++",
+    "--",
+    "+",
+    "-",
+    "not",
+    "~",
+    "&",
+    "|",
+    "^",
+    "**",
+    "*",
+    "/",
+    "%",
+    ">>",
+    "<<",
+    ">>>",
+    "<",
+    ">",
+    "<=",
+    ">=",
+    "==",
+    "===",
+    "is",
+    "!=",
+    "!==",
+    "?",
+    "=",
+    "+=",
+    "-=",
+    "/=",
+    "*=",
+    "%=",
+    ">>=",
+    "<<=",
+    ">>>=",
+    "|=",
+    "^=",
+    "&=",
+    "and",
+    "or",
+    "til",
+    "to",
+    "@"
+])
 
 OP_MAP = {
     'or': "||",
@@ -593,7 +643,10 @@ def tokenizer($TEXT, filename):
                 return grow(bigger)
             else:
                 return op
-        return token("operator", grow(prefix or next()))
+        op = grow(prefix or next())
+        if op in ["++", "--", "===", "!=="]:
+            parse_error("Invalid operator «" + op + "»")
+        return token("operator", op)
 
     def handle_slash():
         next()
@@ -782,7 +835,7 @@ def parse($TEXT, options):
         croak(msg, token.line, token.col)
 
     def unexpected(token):
-        if token == None:
+        if token == undefined:
             token = S.token
         token_error(token, "Unexpected token: " + token.type + " «" + token.value + "»")
 
@@ -2128,6 +2181,7 @@ def parse($TEXT, options):
         if allow_calls and is_("punc", "(") and not S.token.nlb:
             next()
             if isinstance(expr, AST_SymbolRef) and expr.name == "JS":
+                # raw JavaScript chunk of code
                 str_ = expression(False)
                 if not (isinstance(str_, AST_String)):
                     token_error(prev(), "Compile-time function JS() can't process variables or expressions")
@@ -2138,7 +2192,7 @@ def parse($TEXT, options):
                     end: prev()
                 })
                 expect(")")
-                return ret
+                return subscripts(ret, True)
             elif get_class_in_scope(expr):
                 # this is an object being created using a class
                 return subscripts(new AST_New({
@@ -2180,6 +2234,7 @@ def parse($TEXT, options):
                     or tmp_ == "getattr"
                     or tmp_ == "setattr"
                     or tmp_ == "hasattr":
+                        # special functions that trigger addition of extra logic to generated JavaScript
                         BASELIB[expr.name] = True
                         # NOTE: there is intentionally no return here, we want these functions to go through regular logic
                         # after they trigger the appropriate baselib flag
@@ -2200,6 +2255,7 @@ def parse($TEXT, options):
                             end: prev()
                         })
 
+                # fall-through to basic function call
                 return subscripts(new AST_Call({
                     start: start,
                     expression: expr,
@@ -2235,8 +2291,6 @@ def parse($TEXT, options):
         return val
 
     def make_unary(ctor, op, expr):
-        if op == "++" or op == "--":
-            croak("Invalid operator «" + op + "»")
         return new ctor({
             operator: op,
             expression: expr
