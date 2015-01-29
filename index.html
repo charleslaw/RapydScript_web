@@ -107,6 +107,7 @@ def factorial(n):
         rapydscript_string += '\n'; //just to be safe
         try {
           BASELIB = {}
+          INDEX_COUNTER = 0
           TOPLEVEL = parse(rapydscript_string, rs_options);
           TOPLEVEL.print(output);
           preview.setValue(String(output) + '\n');
