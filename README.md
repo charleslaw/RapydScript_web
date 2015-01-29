@@ -26,3 +26,7 @@ then apply it
 
 It will patch lib/parse.js
 
+For the time being, you will also need to run the following patch:
+
+    git apply temporary_index_counter_patch.patch
+
