@@ -91,14 +91,18 @@ def factorial(n):
 
       //RapydScript options
       var rs_options = {
-        "filename":"demo",
-        "toplevel":null,
-        "basedir": null,
-        "libdir": null
+        "filename":"demo.pyj",
+        "module_id": "demo",
+	toplevel: null,
+        "basedir": [],
+        "libdir": [],
+        IMPORTED: {},
+        IMPORTING: {}
       };
       var output_opts = {
         "beautify":true,
-        "private_scope":false
+        "private_scope":false,
+        baselib: parse_baselib(),
       };
 
       function updatePreview(from_error) {

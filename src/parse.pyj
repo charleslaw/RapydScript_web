@@ -2,7 +2,7 @@
 **********************************************************************
 
   A RapydScript to JavaScript compiler.
-  https://github.com/atsepkov/RapydScript2
+  https://github.com/atsepkov/RapydScript
 
   -------------------------------- (C) ---------------------------------
 
@@ -47,25 +47,44 @@
 """
 "use strict"
 
-KEYWORDS = "as break case class const continue debugger default def del do elif else except finally for from if import in instanceof is module new nonlocal pass raise return switch til to try typeof var void while with or and not"
+ES6_KEYWORDS = "yield"
+KEYWORDS = "as break case class const continue debugger default def del do elif else except " +
+"finally for from if import in instanceof is new nonlocal pass raise return switch til to " +
+"try typeof var void while with or and not" + " " + ES6_KEYWORDS
+
 
 KEYWORDS_ATOM = "False None True"
 
-RESERVED_WORDS = "abstract boolean byte char double enum export extends final float goto implements int interface long native package private protected public short static super synchronized this throws transient volatile" + " " + KEYWORDS_ATOM + " " + KEYWORDS
+RESERVED_WORDS = "abstract boolean byte char double enum export extends final float goto " +
+"implements int interface long native package private protected public short static super " +
+"synchronized this throws transient volatile" + " " + KEYWORDS_ATOM + " " + KEYWORDS
 
 KEYWORDS_BEFORE_EXPRESSION = "return new del raise elif else if"
 
+ALL_KEYWORDS = RESERVED_WORDS + " " + KEYWORDS_BEFORE_EXPRESSION
+
 KEYWORDS = makePredicate(KEYWORDS)
+ES6_KEYWORDS = makePredicate(ES6_KEYWORDS)
 RESERVED_WORDS = makePredicate(RESERVED_WORDS)
 KEYWORDS_BEFORE_EXPRESSION = makePredicate(KEYWORDS_BEFORE_EXPRESSION)
 KEYWORDS_ATOM = makePredicate(KEYWORDS_ATOM)
 
 NATIVE_CLASSES = {
+    # javascript
     'Image': {},
     'RegExp': {},
     'Error': {},
     'Object': {
-        static: [ "getOwnPropertyNames", "keys", "create" ]
+        static: [
+            "assign",               # ES6
+            "getOwnPropertyNames",
+            "keys",
+            "create",
+            "defineProperty",
+            "defineProperties",
+            "getPrototypeOf",       # ES6
+            "setPrototypeOf",       # ES6
+        ]
     },
     'String': {
         static: [ "fromCharCode" ]
@@ -91,8 +110,20 @@ NATIVE_CLASSES = {
     'Uint16Array': {},
     'Uint32Array': {},
     'Uint8Array': {},
-    'Uint8ClampedArray': {}
+    'Uint8ClampedArray': {},
+    'Map': {},      # ES6
+    'WeakMap': {},  # ES6
+    'Set': {},      # ES6
+    'WeakSet': {},  # ES6
+
+    # baselib
+    "AssertionError": {},
+    "IndexError": {},
+    "KeyError": {},
+    "TypeError": {},
+    "ValueError": {},
 }
+COMMON_STATIC = [ "call", "apply", "bind", "toString" ]
 
 OPERATOR_CHARS = makePredicate(characters("+-*&%=<>!?|~^@"))
 
@@ -119,6 +150,7 @@ OPERATORS = makePredicate([
     "**",
     "*",
     "/",
+    "//",
     "%",
     ">>",
     "<<",
@@ -137,6 +169,7 @@ OPERATORS = makePredicate([
     "+=",
     "-=",
     "/=",
+    "//=",
     "*=",
     "%=",
     ">>=",
@@ -173,15 +206,62 @@ REGEXP_MODIFIERS = makePredicate(characters("gmsiy"))
 
 # -----[ Tokenizer ]-----
 # regexps adapted from http://xregexp.com/plugins/#unicode
-UNICODE = {
+UNICODE = {  # {{{
     letter: RegExp("[\\u0041-\\u005A\\u0061-\\u007A\\u00AA\\u00B5\\u00BA\\u00C0-\\u00D6\\u00D8-\\u00F6\\u00F8-\\u02C1\\u02C6-\\u02D1\\u02E0-\\u02E4\\u02EC\\u02EE\\u0370-\\u0374\\u0376\\u0377\\u037A-\\u037D\\u0386\\u0388-\\u038A\\u038C\\u038E-\\u03A1\\u03A3-\\u03F5\\u03F7-\\u0481\\u048A-\\u0523\\u0531-\\u0556\\u0559\\u0561-\\u0587\\u05D0-\\u05EA\\u05F0-\\u05F2\\u0621-\\u064A\\u066E\\u066F\\u0671-\\u06D3\\u06D5\\u06E5\\u06E6\\u06EE\\u06EF\\u06FA-\\u06FC\\u06FF\\u0710\\u0712-\\u072F\\u074D-\\u07A5\\u07B1\\u07CA-\\u07EA\\u07F4\\u07F5\\u07FA\\u0904-\\u0939\\u093D\\u0950\\u0958-\\u0961\\u0971\\u0972\\u097B-\\u097F\\u0985-\\u098C\\u098F\\u0990\\u0993-\\u09A8\\u09AA-\\u09B0\\u09B2\\u09B6-\\u09B9\\u09BD\\u09CE\\u09DC\\u09DD\\u09DF-\\u09E1\\u09F0\\u09F1\\u0A05-\\u0A0A\\u0A0F\\u0A10\\u0A13-\\u0A28\\u0A2A-\\u0A30\\u0A32\\u0A33\\u0A35\\u0A36\\u0A38\\u0A39\\u0A59-\\u0A5C\\u0A5E\\u0A72-\\u0A74\\u0A85-\\u0A8D\\u0A8F-\\u0A91\\u0A93-\\u0AA8\\u0AAA-\\u0AB0\\u0AB2\\u0AB3\\u0AB5-\\u0AB9\\u0ABD\\u0AD0\\u0AE0\\u0AE1\\u0B05-\\u0B0C\\u0B0F\\u0B10\\u0B13-\\u0B28\\u0B2A-\\u0B30\\u0B32\\u0B33\\u0B35-\\u0B39\\u0B3D\\u0B5C\\u0B5D\\u0B5F-\\u0B61\\u0B71\\u0B83\\u0B85-\\u0B8A\\u0B8E-\\u0B90\\u0B92-\\u0B95\\u0B99\\u0B9A\\u0B9C\\u0B9E\\u0B9F\\u0BA3\\u0BA4\\u0BA8-\\u0BAA\\u0BAE-\\u0BB9\\u0BD0\\u0C05-\\u0C0C\\u0C0E-\\u0C10\\u0C12-\\u0C28\\u0C2A-\\u0C33\\u0C35-\\u0C39\\u0C3D\\u0C58\\u0C59\\u0C60\\u0C61\\u0C85-\\u0C8C\\u0C8E-\\u0C90\\u0C92-\\u0CA8\\u0CAA-\\u0CB3\\u0CB5-\\u0CB9\\u0CBD\\u0CDE\\u0CE0\\u0CE1\\u0D05-\\u0D0C\\u0D0E-\\u0D10\\u0D12-\\u0D28\\u0D2A-\\u0D39\\u0D3D\\u0D60\\u0D61\\u0D7A-\\u0D7F\\u0D85-\\u0D96\\u0D9A-\\u0DB1\\u0DB3-\\u0DBB\\u0DBD\\u0DC0-\\u0DC6\\u0E01-\\u0E30\\u0E32\\u0E33\\u0E40-\\u0E46\\u0E81\\u0E82\\u0E84\\u0E87\\u0E88\\u0E8A\\u0E8D\\u0E94-\\u0E97\\u0E99-\\u0E9F\\u0EA1-\\u0EA3\\u0EA5\\u0EA7\\u0EAA\\u0EAB\\u0EAD-\\u0EB0\\u0EB2\\u0EB3\\u0EBD\\u0EC0-\\u0EC4\\u0EC6\\u0EDC\\u0EDD\\u0F00\\u0F40-\\u0F47\\u0F49-\\u0F6C\\u0F88-\\u0F8B\\u1000-\\u102A\\u103F\\u1050-\\u1055\\u105A-\\u105D\\u1061\\u1065\\u1066\\u106E-\\u1070\\u1075-\\u1081\\u108E\\u10A0-\\u10C5\\u10D0-\\u10FA\\u10FC\\u1100-\\u1159\\u115F-\\u11A2\\u11A8-\\u11F9\\u1200-\\u1248\\u124A-\\u124D\\u1250-\\u1256\\u1258\\u125A-\\u125D\\u1260-\\u1288\\u128A-\\u128D\\u1290-\\u12B0\\u12B2-\\u12B5\\u12B8-\\u12BE\\u12C0\\u12C2-\\u12C5\\u12C8-\\u12D6\\u12D8-\\u1310\\u1312-\\u1315\\u1318-\\u135A\\u1380-\\u138F\\u13A0-\\u13F4\\u1401-\\u166C\\u166F-\\u1676\\u1681-\\u169A\\u16A0-\\u16EA\\u1700-\\u170C\\u170E-\\u1711\\u1720-\\u1731\\u1740-\\u1751\\u1760-\\u176C\\u176E-\\u1770\\u1780-\\u17B3\\u17D7\\u17DC\\u1820-\\u1877\\u1880-\\u18A8\\u18AA\\u1900-\\u191C\\u1950-\\u196D\\u1970-\\u1974\\u1980-\\u19A9\\u19C1-\\u19C7\\u1A00-\\u1A16\\u1B05-\\u1B33\\u1B45-\\u1B4B\\u1B83-\\u1BA0\\u1BAE\\u1BAF\\u1C00-\\u1C23\\u1C4D-\\u1C4F\\u1C5A-\\u1C7D\\u1D00-\\u1DBF\\u1E00-\\u1F15\\u1F18-\\u1F1D\\u1F20-\\u1F45\\u1F48-\\u1F4D\\u1F50-\\u1F57\\u1F59\\u1F5B\\u1F5D\\u1F5F-\\u1F7D\\u1F80-\\u1FB4\\u1FB6-\\u1FBC\\u1FBE\\u1FC2-\\u1FC4\\u1FC6-\\u1FCC\\u1FD0-\\u1FD3\\u1FD6-\\u1FDB\\u1FE0-\\u1FEC\\u1FF2-\\u1FF4\\u1FF6-\\u1FFC\\u2071\\u207F\\u2090-\\u2094\\u2102\\u2107\\u210A-\\u2113\\u2115\\u2119-\\u211D\\u2124\\u2126\\u2128\\u212A-\\u212D\\u212F-\\u2139\\u213C-\\u213F\\u2145-\\u2149\\u214E\\u2183\\u2184\\u2C00-\\u2C2E\\u2C30-\\u2C5E\\u2C60-\\u2C6F\\u2C71-\\u2C7D\\u2C80-\\u2CE4\\u2D00-\\u2D25\\u2D30-\\u2D65\\u2D6F\\u2D80-\\u2D96\\u2DA0-\\u2DA6\\u2DA8-\\u2DAE\\u2DB0-\\u2DB6\\u2DB8-\\u2DBE\\u2DC0-\\u2DC6\\u2DC8-\\u2DCE\\u2DD0-\\u2DD6\\u2DD8-\\u2DDE\\u2E2F\\u3005\\u3006\\u3031-\\u3035\\u303B\\u303C\\u3041-\\u3096\\u309D-\\u309F\\u30A1-\\u30FA\\u30FC-\\u30FF\\u3105-\\u312D\\u3131-\\u318E\\u31A0-\\u31B7\\u31F0-\\u31FF\\u3400\\u4DB5\\u4E00\\u9FC3\\uA000-\\uA48C\\uA500-\\uA60C\\uA610-\\uA61F\\uA62A\\uA62B\\uA640-\\uA65F\\uA662-\\uA66E\\uA67F-\\uA697\\uA717-\\uA71F\\uA722-\\uA788\\uA78B\\uA78C\\uA7FB-\\uA801\\uA803-\\uA805\\uA807-\\uA80A\\uA80C-\\uA822\\uA840-\\uA873\\uA882-\\uA8B3\\uA90A-\\uA925\\uA930-\\uA946\\uAA00-\\uAA28\\uAA40-\\uAA42\\uAA44-\\uAA4B\\uAC00\\uD7A3\\uF900-\\uFA2D\\uFA30-\\uFA6A\\uFA70-\\uFAD9\\uFB00-\\uFB06\\uFB13-\\uFB17\\uFB1D\\uFB1F-\\uFB28\\uFB2A-\\uFB36\\uFB38-\\uFB3C\\uFB3E\\uFB40\\uFB41\\uFB43\\uFB44\\uFB46-\\uFBB1\\uFBD3-\\uFD3D\\uFD50-\\uFD8F\\uFD92-\\uFDC7\\uFDF0-\\uFDFB\\uFE70-\\uFE74\\uFE76-\\uFEFC\\uFF21-\\uFF3A\\uFF41-\\uFF5A\\uFF66-\\uFFBE\\uFFC2-\\uFFC7\\uFFCA-\\uFFCF\\uFFD2-\\uFFD7\\uFFDA-\\uFFDC]"),
     non_spacing_mark: RegExp("[\\u0300-\\u036F\\u0483-\\u0487\\u0591-\\u05BD\\u05BF\\u05C1\\u05C2\\u05C4\\u05C5\\u05C7\\u0610-\\u061A\\u064B-\\u065E\\u0670\\u06D6-\\u06DC\\u06DF-\\u06E4\\u06E7\\u06E8\\u06EA-\\u06ED\\u0711\\u0730-\\u074A\\u07A6-\\u07B0\\u07EB-\\u07F3\\u0816-\\u0819\\u081B-\\u0823\\u0825-\\u0827\\u0829-\\u082D\\u0900-\\u0902\\u093C\\u0941-\\u0948\\u094D\\u0951-\\u0955\\u0962\\u0963\\u0981\\u09BC\\u09C1-\\u09C4\\u09CD\\u09E2\\u09E3\\u0A01\\u0A02\\u0A3C\\u0A41\\u0A42\\u0A47\\u0A48\\u0A4B-\\u0A4D\\u0A51\\u0A70\\u0A71\\u0A75\\u0A81\\u0A82\\u0ABC\\u0AC1-\\u0AC5\\u0AC7\\u0AC8\\u0ACD\\u0AE2\\u0AE3\\u0B01\\u0B3C\\u0B3F\\u0B41-\\u0B44\\u0B4D\\u0B56\\u0B62\\u0B63\\u0B82\\u0BC0\\u0BCD\\u0C3E-\\u0C40\\u0C46-\\u0C48\\u0C4A-\\u0C4D\\u0C55\\u0C56\\u0C62\\u0C63\\u0CBC\\u0CBF\\u0CC6\\u0CCC\\u0CCD\\u0CE2\\u0CE3\\u0D41-\\u0D44\\u0D4D\\u0D62\\u0D63\\u0DCA\\u0DD2-\\u0DD4\\u0DD6\\u0E31\\u0E34-\\u0E3A\\u0E47-\\u0E4E\\u0EB1\\u0EB4-\\u0EB9\\u0EBB\\u0EBC\\u0EC8-\\u0ECD\\u0F18\\u0F19\\u0F35\\u0F37\\u0F39\\u0F71-\\u0F7E\\u0F80-\\u0F84\\u0F86\\u0F87\\u0F90-\\u0F97\\u0F99-\\u0FBC\\u0FC6\\u102D-\\u1030\\u1032-\\u1037\\u1039\\u103A\\u103D\\u103E\\u1058\\u1059\\u105E-\\u1060\\u1071-\\u1074\\u1082\\u1085\\u1086\\u108D\\u109D\\u135F\\u1712-\\u1714\\u1732-\\u1734\\u1752\\u1753\\u1772\\u1773\\u17B7-\\u17BD\\u17C6\\u17C9-\\u17D3\\u17DD\\u180B-\\u180D\\u18A9\\u1920-\\u1922\\u1927\\u1928\\u1932\\u1939-\\u193B\\u1A17\\u1A18\\u1A56\\u1A58-\\u1A5E\\u1A60\\u1A62\\u1A65-\\u1A6C\\u1A73-\\u1A7C\\u1A7F\\u1B00-\\u1B03\\u1B34\\u1B36-\\u1B3A\\u1B3C\\u1B42\\u1B6B-\\u1B73\\u1B80\\u1B81\\u1BA2-\\u1BA5\\u1BA8\\u1BA9\\u1C2C-\\u1C33\\u1C36\\u1C37\\u1CD0-\\u1CD2\\u1CD4-\\u1CE0\\u1CE2-\\u1CE8\\u1CED\\u1DC0-\\u1DE6\\u1DFD-\\u1DFF\\u20D0-\\u20DC\\u20E1\\u20E5-\\u20F0\\u2CEF-\\u2CF1\\u2DE0-\\u2DFF\\u302A-\\u302F\\u3099\\u309A\\uA66F\\uA67C\\uA67D\\uA6F0\\uA6F1\\uA802\\uA806\\uA80B\\uA825\\uA826\\uA8C4\\uA8E0-\\uA8F1\\uA926-\\uA92D\\uA947-\\uA951\\uA980-\\uA982\\uA9B3\\uA9B6-\\uA9B9\\uA9BC\\uAA29-\\uAA2E\\uAA31\\uAA32\\uAA35\\uAA36\\uAA43\\uAA4C\\uAAB0\\uAAB2-\\uAAB4\\uAAB7\\uAAB8\\uAABE\\uAABF\\uAAC1\\uABE5\\uABE8\\uABED\\uFB1E\\uFE00-\\uFE0F\\uFE20-\\uFE26]"),
     space_combining_mark: RegExp("[\\u0903\\u093E-\\u0940\\u0949-\\u094C\\u094E\\u0982\\u0983\\u09BE-\\u09C0\\u09C7\\u09C8\\u09CB\\u09CC\\u09D7\\u0A03\\u0A3E-\\u0A40\\u0A83\\u0ABE-\\u0AC0\\u0AC9\\u0ACB\\u0ACC\\u0B02\\u0B03\\u0B3E\\u0B40\\u0B47\\u0B48\\u0B4B\\u0B4C\\u0B57\\u0BBE\\u0BBF\\u0BC1\\u0BC2\\u0BC6-\\u0BC8\\u0BCA-\\u0BCC\\u0BD7\\u0C01-\\u0C03\\u0C41-\\u0C44\\u0C82\\u0C83\\u0CBE\\u0CC0-\\u0CC4\\u0CC7\\u0CC8\\u0CCA\\u0CCB\\u0CD5\\u0CD6\\u0D02\\u0D03\\u0D3E-\\u0D40\\u0D46-\\u0D48\\u0D4A-\\u0D4C\\u0D57\\u0D82\\u0D83\\u0DCF-\\u0DD1\\u0DD8-\\u0DDF\\u0DF2\\u0DF3\\u0F3E\\u0F3F\\u0F7F\\u102B\\u102C\\u1031\\u1038\\u103B\\u103C\\u1056\\u1057\\u1062-\\u1064\\u1067-\\u106D\\u1083\\u1084\\u1087-\\u108C\\u108F\\u109A-\\u109C\\u17B6\\u17BE-\\u17C5\\u17C7\\u17C8\\u1923-\\u1926\\u1929-\\u192B\\u1930\\u1931\\u1933-\\u1938\\u19B0-\\u19C0\\u19C8\\u19C9\\u1A19-\\u1A1B\\u1A55\\u1A57\\u1A61\\u1A63\\u1A64\\u1A6D-\\u1A72\\u1B04\\u1B35\\u1B3B\\u1B3D-\\u1B41\\u1B43\\u1B44\\u1B82\\u1BA1\\u1BA6\\u1BA7\\u1BAA\\u1C24-\\u1C2B\\u1C34\\u1C35\\u1CE1\\u1CF2\\uA823\\uA824\\uA827\\uA880\\uA881\\uA8B4-\\uA8C3\\uA952\\uA953\\uA983\\uA9B4\\uA9B5\\uA9BA\\uA9BB\\uA9BD-\\uA9C0\\uAA2F\\uAA30\\uAA33\\uAA34\\uAA4D\\uAA7B\\uABE3\\uABE4\\uABE6\\uABE7\\uABE9\\uABEA\\uABEC]"),
     connector_punctuation: RegExp("[\\u005F\\u203F\\u2040\\u2054\\uFE33\\uFE34\\uFE4D-\\uFE4F\\uFF3F]")
 }
 
-IMPORTED = {}
+
+# detect common python stdlib methods - these will be auto-injected into the code when called
 BASELIB = {}
+STDLIB = [
+    "abs",
+    "bin",
+    "cmp",
+    "chr",
+    "dir",
+    "hex",
+    "max",
+    "min",
+    "mixin",
+    "print",
+    "range",
+    "reduce",
+    "getattr",
+    "setattr",
+    "hasattr",
+
+    # unique to RapydScript
+    "eq",
+    "bind",
+    "rebind_all",
+
+    # list operations
+    "all",
+    "any",
+    "enumerate",
+    "filter",
+    "len",
+    "map",
+    "reversed",
+    "sum",
+    "zip",
+
+    # errors
+    "AssertionError",
+    "IndexError",
+    "KeyError",
+    "TypeError",
+    "ValueError",
+]
+
+IDENTIFIER_PAT = /^[a-z_$][_a-z0-9$]*$/i
+
+class ImportError(Error):
+    def __init__(self, message):
+        self.message = message
 
 def is_letter(code):
     return code >= 97 and code <= 122 or code >= 65 and code <= 90 or code >= 170 and UNICODE.letter.test(String.fromCharCode(code))
@@ -199,7 +279,7 @@ def is_unicode_connector_punctuation(ch):
     return UNICODE.connector_punctuation.test(ch)
 
 def is_identifier(name):
-    return not RESERVED_WORDS(name) and /^[a-z_$][a-z0-9_$]*$/i.test(name)
+    return not RESERVED_WORDS(name) and IDENTIFIER_PAT.test(name)
 
 def is_identifier_start(code):
     return code == 36 or code == 95 or is_letter(code)
@@ -216,31 +296,32 @@ def parse_js_number(num):
     elif RE_DEC_NUMBER.test(num):
         return parseFloat(num)
 
-def JS_Parse_Error(message, line, col, pos):
+def JS_Parse_Error(message, line, col, pos, is_eof):
     this.message = message
     this.line = line
     this.col = col
     this.pos = pos
     this.stack = Error().stack
+    this.is_eof = is_eof
 
 JS_Parse_Error.prototype.toString = def():
     return this.message + " (line: " + this.line + ", col: " + this.col + ", pos: " + this.pos + ")" + "\n\n" + this.stack
 
-def js_error(message, filename, line, col, pos):
+def js_error(message, filename, line, col, pos, is_eof):
     AST_Node.warn("ERROR: {message} [{file}:{line},{col}]", {
         message: message,
         file: filename,
         line: line,
         col: col
     })
-    raise new JS_Parse_Error(message, line, col, pos)
+    raise new JS_Parse_Error(message, line, col, pos, is_eof)
 
 def is_token(token, type, val):
     return token.type == type and (val == None or val == undefined or token.value == val)
 
 EX_EOF = {}
 
-def tokenizer($TEXT, filename):
+def tokenizer($TEXT, filename):  # {{{
     S = {
         text: $TEXT.replace(/\r\n?|[\n\u2028\u2029]/g, "\n").replace(/\uFEFF/g, ""),
         filename: filename,
@@ -293,6 +374,7 @@ def tokenizer($TEXT, filename):
         S.tokpos = S.pos
 
     def token(type, value, is_comment, keep_newline):
+
         S.regex_allowed = type == "operator" and not UNARY_POSTFIX[value] \
             or type == "keyword" and KEYWORDS_BEFORE_EXPRESSION(value) \
             or type == "punc" and PUNC_BEFORE_EXPRESSION(value)
@@ -326,7 +408,7 @@ def tokenizer($TEXT, filename):
 
         if type == "punc":
             #            if (value == ":" && peek() == "\n") {
-            if value == ":" and not S.index_or_slice.slice(-1)[0]
+            if value == ":" and not S.index_or_slice[-1]
             and (not S.text.substring(S.pos + 1, find("\n")).trim() or not S.text.substring(S.pos + 1, find("#")).trim()):
                 S.newblock = True
                 S.indentation_matters.push(True)
@@ -370,7 +452,7 @@ def tokenizer($TEXT, filename):
     def test_indent_token(leading_whitespace):
         most_recent = S.whitespace_before[S.whitespace_before.length - 1] or ""
         S.endblock = False
-        if S.indentation_matters.slice(-1)[0] and leading_whitespace != most_recent:
+        if S.indentation_matters[-1] and leading_whitespace != most_recent:
             if S.newblock and leading_whitespace and leading_whitespace.indexOf(most_recent) == 0:
                 # positive indent, new block
                 S.newblock = False
@@ -395,8 +477,8 @@ def tokenizer($TEXT, filename):
             ret += next()
         return ret
 
-    def parse_error(err):
-        js_error(err, filename, S.tokline, S.tokcol, S.tokpos)
+    def parse_error(err, is_eof):
+        js_error(err, filename, S.tokline, S.tokcol, S.tokpos, is_eof)
 
     def read_num(prefix):
         has_e = False
@@ -585,10 +667,13 @@ def tokenizer($TEXT, filename):
             if not backslash:
                 if ch == "\\":
                     if S.text.charAt(S.pos + 1) == "\n":
+                        # stitching lines together
                         S.pos += 2
                         continue
                     else:
-                        escaped = backslash = True, next()
+                        # actual backslash
+                        escaped = backslash = True
+                        next()
                 elif is_identifier_char(ch):
                     name += next()
                 else:
@@ -611,7 +696,24 @@ def tokenizer($TEXT, filename):
         prev_backslash = False
 
         in_class = False
+        verbose_regexp = False
+        in_comment = False
+
+        if peek() == '/':
+            next(True)
+            if peek() == '/':
+                verbose_regexp = True
+                next(True)
+            else: # empty regexp (//)
+                mods = read_name()
+                return token("regexp", RegExp(regexp, mods))
+
         while ch = next(True):
+            if in_comment:
+                if ch == '\n':
+                    in_comment = False
+                continue
+
             if prev_backslash:
                 regexp += "\\" + ch
                 prev_backslash = False
@@ -622,9 +724,22 @@ def tokenizer($TEXT, filename):
                 in_class = False
                 regexp += ch
             elif ch == "/" and not in_class:
+                if verbose_regexp:
+                    if peek() != '/':
+                        regexp += '\\/'
+                        continue
+                    next(True)
+                    if peek() != '/':
+                        regexp += '\\/\\/'
+                        continue
+                    next(True)
                 break
             elif ch == "\\":
                 prev_backslash = True
+            elif verbose_regexp and not in_class and ' \n\r\t'.indexOf(ch) != -1:
+                pass
+            elif verbose_regexp and not in_class and ch == '#':
+                in_comment = True
             else:
                 regexp += ch
 
@@ -666,7 +781,7 @@ def tokenizer($TEXT, filename):
                 return cont(x)
             except as ex:
                 if ex is EX_EOF:
-                    parse_error(eof_error)
+                    parse_error(eof_error, true)
                 else:
                     raise
 
@@ -732,7 +847,7 @@ def tokenizer($TEXT, filename):
         return S
 
     return next_token
-
+# }}}
 
 # -----[ Parser (constants) ]-----
 UNARY_PREFIX = makePredicate([
@@ -750,7 +865,7 @@ UNARY_PREFIX = makePredicate([
 
 UNARY_POSTFIX = makePredicate([ "--", "++" ])
 
-ASSIGNMENT = makePredicate([ "=", "+=", "-=", "/=", "*=", "%=", ">>=", "<<=", ">>>=", "|=", "^=", "&=" ])
+ASSIGNMENT = makePredicate([ "=", "+=", "-=", "/=", "//=", "*=", "%=", ">>=", "<<=", ">>>=", "|=", "^=", "&=" ])
 
 PRECEDENCE = def(a, ret):
     for i in range(a.length):
@@ -769,7 +884,7 @@ PRECEDENCE = def(a, ret):
     [ "<", ">", "<=", ">=", "in", "instanceof" ],
     [ ">>", "<<", ">>>" ],
     [ "+", "-" ],
-    [ "*", "/", "%" ],
+    [ "*", "/", "//", "%" ],
     [ "**" ]
     # highest precedence
 ], {})
@@ -781,11 +896,18 @@ ATOMIC_START_TOKEN = array_to_hash([ "atom", "num", "string", "regexp", "name" ]
 # -----[ Parser ]-----
 def parse($TEXT, options):
     options = defaults(options, {
-        strict: False,      # whether to use strict JavaScript mode
-        filename: None,     # name of the file being parsed
-        auto_bind: False,   # whether auto-binding of methods to classes is enabled
-        toplevel: None
+        strict: False,          # whether to use strict JavaScript mode
+        filename: None,         # name of the file being parsed
+        auto_bind: False,       # whether auto-binding of methods to classes is enabled
+        module_id: '__main__',  # The id of the module being parsed
+        es6: False,
+        toplevel: None,
+        classes: undefined      # Map of class names to AST_Class that are available in the global namespace (used by the REPL)
     })
+    module_id = options.module_id
+    IMPORTED = options.IMPORTED or {}
+    IMPORTING = options.IMPORTING or {}
+    IMPORTING[module_id] = True
 
     S = {
         input: (typeof $TEXT == "string" ? tokenizer($TEXT, options.filename) : $TEXT),
@@ -799,10 +921,12 @@ def parse($TEXT, options):
         classes: [ {} ],
         labels: [],
         decorators: [],
-        module_tree: {},
-        # tree describing the structure of modules and classes within them (module: {}, class: undefined)
-        module_stack: []
     }
+
+    if options.classes:
+        for cname in options.classes:
+            obj = options.classes[cname]
+            S.classes[0][cname] = { 'static':obj.static, 'bound':obj.bound }
 
     S.token = next()
     def is_(type, value):
@@ -825,14 +949,15 @@ def parse($TEXT, options):
     def prev():
         return S.prev
 
-    def croak(msg, line, col, pos):
+    def croak(msg, line, col, pos, is_eof):
         # note: undefined means nothing was passed in, None/null means a null value was passed in
         ctx = S.input.context()
         js_error(msg, ctx.filename, (line != undefined ? line : ctx.tokline),
-                 (col != undefined ? col : ctx.tokcol), (pos != undefined ? pos : ctx.tokpos))
+                 (col != undefined ? col : ctx.tokcol), (pos != undefined ? pos : ctx.tokpos), is_eof)
 
     def token_error(token, msg):
-        croak(msg, token.line, token.col)
+        is_eof = (token.type == 'eof') ? true : false
+        croak(msg, token.line, token.col, undefined, is_eof)
 
     def unexpected(token):
         if token == undefined:
@@ -866,6 +991,8 @@ def parse($TEXT, options):
         return def():
             start = S.token
             expr = parser()
+            if expr == undefined:
+                unexpected()
             end = prev()
             expr.start = start
             expr.end = end
@@ -891,22 +1018,56 @@ def parse($TEXT, options):
         else:
             return False
 
+    def scan_for_top_level_callables(body):
+        ans = []
+        # Get the named functions and classes
+        if Array.isArray(body):
+            for name in dir(body):
+                obj = body[name]
+                if isinstance(obj, AST_Function) or isinstance(obj, AST_Class):
+                    if obj.name:
+                        ans.push(obj.name)
+                    else:
+                        token_error(obj.start, "Top-level functions must have names")
+                else:
+                    # skip inner scopes
+                    if isinstance(obj, AST_Scope):
+                        continue
+                    for x in ['body', 'alternative']:
+                        opt = obj[x]
+                        if opt:
+                            ans = ans.concat(scan_for_top_level_callables(opt))
 
-    def scan_for_local_vars(body, is_module):
+                        if isinstance(opt, AST_Assign) and not (isinstance(opt.right, AST_Scope)):
+                            ans = ans.concat(scan_for_top_level_callables(opt.right))
+        elif body.body:
+            # recursive descent into wrapper statements that contain body blocks
+            ans = ans.concat(scan_for_top_level_callables(body.body))
+            if body.alternative:
+                ans = ans.concat(scan_for_top_level_callables(body.alternative))
+
+        return ans
+
+    def scan_for_classes(body):
+        ans = {}
+        for name in dir(body):
+            obj = body[name]
+            if isinstance(obj, AST_Class):
+                ans[obj.name.name] = obj
+        return ans
+
+    def scan_for_local_vars(body):
         """
         Pick out all variables being assigned to from within this scope, we'll mark them as local
 
         body        body to be scanned
-        is_module   if this body belongs to a module object and variables should be exposed
         """
         vars = []
-        if isinstance(body, Array):
+        if Array.isArray(body):
             # this is a body of statements
             for stmt in dir(body):
                 # skip inner scopes
                 if isinstance(body[stmt], AST_Scope):
-                    if is_module and body[stmt].name:
-                        vars.push(body[stmt].name)
                     continue
 
                 # recursive descent into conditional, loop and exception bodies
@@ -914,46 +1075,45 @@ def parse($TEXT, options):
                     nonlocal vars
                     opt = body[stmt][option]
                     if opt:
-                        vars = vars.concat(scan_for_local_vars(opt, is_module))
+                        vars = vars.concat(scan_for_local_vars(opt))
 
                     if isinstance(opt, AST_Assign) and not (isinstance(opt.right, AST_Scope)):
-                        vars = vars.concat(scan_for_local_vars(opt.right, is_module))
+                        vars = vars.concat(scan_for_local_vars(opt.right))
                 )
 
-                if not is_module:
-                    # pick up iterators from loops
-                    if isinstance(body[stmt], AST_ForIn):
-                        if isinstance(body[stmt].init, AST_Array):
-                            # iteration via implicit tuple
-                            vars.push("_$rapyd$_Unpack")
-                            body[stmt].init.elements.forEach(def(elem):
-                                if vars.indexOf(elem.name) == -1:
-                                    vars.push(elem.name)
-                            )
-                        elif vars.indexOf(body[stmt].init.name) == -1:
-                            # iteration via a single variable
-                            vars.push(body[stmt].init.name)
-                    elif isinstance(body[stmt], AST_DWLoop):
-                        vars = vars.concat(scan_for_local_vars(body[stmt], is_module))
-                    elif isinstance(body[stmt], AST_If) \
-                            and is_nested_comparison(body[stmt].condition):
-                        # if statement condition with complex comparison
-                        vars.push("_$rapyd$_Temp")
-                    elif isinstance(body[stmt], AST_Exit) and is_nested_comparison(body[stmt].value):
-                        # returning a nested conditional
-                        vars.push("_$rapyd$_Temp")
+                # pick up iterators from loops
+                if isinstance(body[stmt], AST_ForIn):
+                    if isinstance(body[stmt].init, AST_Array):
+                        # iteration via implicit tuple
+                        vars.push("ՐՏ_Unpack")
+                        body[stmt].init.elements.forEach(def(elem):
+                            if vars.indexOf(elem.name) == -1:
+                                vars.push(elem.name)
+                        )
+                    elif vars.indexOf(body[stmt].init.name) == -1:
+                        # iteration via a single variable
+                        vars.push(body[stmt].init.name)
+                elif isinstance(body[stmt], AST_DWLoop):
+                    vars = vars.concat(scan_for_local_vars(body[stmt]))
+                elif isinstance(body[stmt], AST_If) \
+                        and is_nested_comparison(body[stmt].condition):
+                    # if statement condition with complex comparison
+                    vars.push("ՐՏ_Temp")
+                elif isinstance(body[stmt], AST_Exit) and is_nested_comparison(body[stmt].value):
+                    # returning a nested conditional
+                    vars.push("ՐՏ_Temp")
 
         elif body.body:
             # recursive descent into wrapper statements that contain body blocks
-            vars = vars.concat(scan_for_local_vars(body.body, is_module))
+            vars = vars.concat(scan_for_local_vars(body.body))
             if body.alternative:
-                vars = vars.concat(scan_for_local_vars(body.alternative, is_module))
+                vars = vars.concat(scan_for_local_vars(body.alternative))
 
         elif isinstance(body, AST_Assign):
             # this is a single assignment operator
             if isinstance(body.left, AST_Array):
                 # assignment to an implicit tuple
-                vars.push("_$rapyd$_Unpack")
+                vars.push("ՐՏ_Unpack")
                 body.left.elements.forEach(def(elem):
                     if not (isinstance(elem, AST_PropAccess)) and vars.indexOf(elem.name) == -1:
                         vars.push(elem.name)
@@ -964,26 +1124,26 @@ def parse($TEXT, options):
 
             if is_nested_comparison(body.right):
                 # assignment of nested conditional result to a variable
-                vars.push("_$rapyd$_Temp")
+                vars.push("ՐՏ_Temp")
             elif isinstance(body.right, AST_Conditional) and is_nested_comparison(body.right.condition):
                 # assignment of a ternary condition result that uses nested conditional
-                vars.push("_$rapyd$_Temp")
+                vars.push("ՐՏ_Temp")
 
         elif isinstance(body, AST_Conditional) and is_nested_comparison(body.condition):
             # ternary condition that uses nested conditional and triggers other logic
             # this is basically a really ugly way to write an if/else
-            vars.push("_$rapyd$_Temp")
+            vars.push("ՐՏ_Temp")
 
         elif is_nested_comparison(body):
             # statement itself is a stand-alone nested conditional - programmatically this would probably
             # be a useless statement
-            vars.push("_$rapyd$_Temp")
+            vars.push("ՐՏ_Temp")
 
         return vars
 
     def scan_for_nonlocal_defs(body):
         vars = []
-        if isinstance(body, Array):
+        if Array.isArray(body):
             for stmt in dir(body):
                 if isinstance(body[stmt], AST_Scope):
                     continue
@@ -1009,23 +1169,6 @@ def parse($TEXT, options):
 
 
         return vars
-
-    def finalize_import(imp):
-        classes = scan_for_classes(imp.body.body)
-        for c in dir(classes):
-            if isinstance(classes[c], ModuleTreeNode):
-                S.module_tree[c] = classes[c]
-            else:
-                S.classes[0][c] = classes[c]
-
-        key = ""
-        while isinstance(imp, AST_Dot):
-            key = "." + imp.property + key
-            imp = imp.expression
-
-        key = imp.name + key
-        IMPORTED[key] = True
-        return imp
 
     statement = embed_tokens(def():
         if is_("operator", "/") or is_("operator", "/="):
@@ -1070,6 +1213,10 @@ def parse($TEXT, options):
             return (is_token(peek(), "punc", ":") ? labeled_statement() : simple_statement())
         elif tmp_ == "keyword":
             tmp_ = S.token.value
+
+            if ES6_KEYWORDS(tmp_) and not options.es6:
+                token_error(prev(), "«" + tmp_ + "» keyword not supported with ES5-compatible output, use --ecmascript6 compilation flag")
+
             next()
             if tmp_ == "break":
                 return break_cont(AST_Break)
@@ -1095,21 +1242,22 @@ def parse($TEXT, options):
                     body: in_loop(statement)
                 })
             elif tmp_ == "for":
+                if is_("name", "JS"):
+                    return for_js()
                 return for_()
             elif tmp_ == "from":
-                return finalize_import(from_import_())
+                return import_(True)
             elif tmp_ == "import":
-                return finalize_import(import_())
+                return import_(False)
             elif tmp_ == "class":
                 BASELIB["extends"] = True
                 if options.auto_bind:
                     BASELIB["rebind_all"] = True
+                    BASELIB["bind"] = True  # used by rebind_all
                 return class_()
-            elif tmp_ == "module":
-                return module_()
             elif tmp_ == "def":
                 start = prev()
-                func = function_(S.in_class.slice(-1)[0])
+                func = function_(S.in_class[-1])
                 func.start = start
                 func.end = prev()
                 chain = subscripts(func, True)
@@ -1126,7 +1274,7 @@ def parse($TEXT, options):
             elif tmp_ == "pass":
                 semicolon()
                 return new AST_EmptyStatement()
-            elif tmp_ == "return":
+            elif tmp_ == "return" or tmp_ == "yield":
                 if S.in_function == 0:
                     croak("'return' outside of function")
 
@@ -1153,7 +1301,7 @@ def parse($TEXT, options):
                 if S.token.nlb:
                     return new AST_Throw({
                         value: new AST_SymbolCatch({
-                            name: "_$rapyd$_Exception"
+                            name: "ՐՏ_Exception"
                         })
                     })
 
@@ -1227,6 +1375,21 @@ def parse($TEXT, options):
             label: label
         })
 
+    def seq_to_array(seq):
+        # convert AST_Seq into AST_Array
+        tmp = []
+        iter = seq
+        while iter and iter.car:
+            tmp.push(iter.car)
+            iter = iter.cdr
+        tmp.push(iter)
+
+        return new AST_Array({
+            start: seq.start,
+            elements: tmp,
+            end: seq.end
+        })
+
     def for_(list_comp):
         #        expect("(");
         init = None
@@ -1234,32 +1397,20 @@ def parse($TEXT, options):
             init = expression(True, True)
             # standardize AST_Seq into array now for consistency
             if isinstance(init, AST_Seq):
-                tmp = []
-                iter = init
-                while iter and iter.car:
-                    tmp.push(iter.car)
-                    iter = iter.cdr
-
-                tmp.push(iter)
-                init = new AST_Array({
-                    start: init.start,
-                    elements: tmp,
-                    end: init.end
-                })
+                init = seq_to_array(init)
 
             if is_("operator", "in"):
                 if isinstance(init, AST_Var) and init.definitions.length > 1:
                     croak("Only one variable declaration allowed in for..in loop")
-
                 next()
                 return for_in(init, list_comp)
-
 
         unexpected()
 
     def for_in(init, list_comp):
         lhs = (isinstance(init, AST_Var) ? init.definitions[0].name : None)
         obj = expression(True)
+        BASELIB["iterable"] = True
         #        expect(")");
         if list_comp:
             return {
@@ -1275,22 +1426,21 @@ def parse($TEXT, options):
             body: in_loop(statement)
         })
 
-    # scan function/class body for nested class declarations
-    def scan_for_classes(body):
-        #        var classes = {};
-        classes = new ModuleTreeNode()
-        for i in dir(body):
-            stmt = body[i]
-            if isinstance(stmt, AST_Class):
-                classes[stmt.name.name] = {
-                    "static": stmt.static,
-                    bound: stmt.bound
-                }
-            elif isinstance(stmt, AST_Module):
-                classes[stmt.name.name] = scan_for_classes(stmt.body)
-        return classes
+    # A native JavaScript for loop - for JS("var i=0; i<5000; i++"):
+    def for_js():
+        condition = expression(True, True)
+        return new AST_ForJS({
+            condition: condition,
+            body: in_loop(statement)
+        })
 
+    # scan function/class body for nested class declarations
     def get_class_in_scope(expr):
+        # TODO: Currently if a local variable shadows a class name defined in
+        # an outerscope, the logic below will identify that variable as a
+        # class. This bug was always present. Fixing it will require the parser
+        # to maintain a list of local variables for every AST_Scope and provide
+        # an easy way to walk the ast tree upwards.
         if isinstance(expr, AST_SymbolRef):
             # check Native JS classes
             if NATIVE_CLASSES.hasOwnProperty(expr.name):
@@ -1307,182 +1457,124 @@ def parse($TEXT, options):
             while isinstance(expr, AST_Dot):
                 referenced_path.unshift(expr.property)
                 expr = expr.expression
-
             if isinstance(expr, AST_SymbolRef):
                 referenced_path.unshift(expr.name)
                 # now 'referenced_path' should contain the full path of potential class
-                # Due to scoping that prefers local-most variables, there are multiple ways a class could be referenced.
-                # To emulate this behavior, we'd need to travel into inner-most scope first and from there keep traveling
-                # outward, while testing for existance of the given object chain in each scope level.
-                current_scope = S.module_stack.slice()
-                current_scope.unshift("")
-                # global scope
-                while current_scope.length:
-                    # navigate to correct location in the module
-                    visible_scope = S.module_tree
-                    current_scope.forEach(def(module__):
-                        nonlocal visible_scope
-                        if module__ in visible_scope:
-                            visible_scope = visible_scope[module__]
-                    )
-                    # now try to find the given path in the tree
-                    traversed_path = referenced_path.slice()
-                    while traversed_path and visible_scope[traversed_path[0]]:
-                        visible_scope = visible_scope[traversed_path[0]]
-                        traversed_path.shift()
-
-                    # we arrived to the end of the path, if visible_scope points to a class, then this call is for a class
-                    if not traversed_path.length:
-                        if not isinstance(visible_scope, ModuleTreeNode):
-                            return visible_scope
-                        else:
-                            return False
-
-                    current_scope.pop()
+                if len(referenced_path) > 1:
+                    class_name = referenced_path.join('.')
+                    for s in range(S.classes.length-1, -1, -1):
+                        if S.classes[s].hasOwnProperty(class_name):
+                            return S.classes[s][class_name]
         return False
 
-    import_ = def():
-        tmp = name = expression(False)
-        file = ".pyj"
-        while isinstance(tmp, AST_Dot):
-            file = "/" + tmp.property + file
-            tmp = tmp.expression
+    def do_import(key):
+        if IMPORTED.hasOwnProperty(key):
+            return
+        if IMPORTING.hasOwnProperty(key) and IMPORTING[key]:
+            raise ImportError('Detected a recursive import of: ' + key + ' while importing: ' + module_id)
 
-        file = tmp.name + file
-        contents = None
-        try:
-            contents = parse(options.readfile(options.basedir + "/" + file, "utf-8"), {
-                filename: file,
-                toplevel: contents,
+        # Ensure that the package containing this module is also imported
+        package_module_id = key.split('.')[:-1].join('.')
+        if len(package_module_id) > 0:
+            do_import(package_module_id)
+
+        def safe_read(base_path):
+            for i, path in enumerate([base_path + '.pyj', base_path + '/__init__.pyj']):
+                try:
+                    return [options.readfile(path, "utf-8"), path]
+                except as e:
+                    if e.code == 'ENOENT' or e.code == 'EPERM' or e.code == 'EACCESS':
+                        if i == 1:
+                            return None, None
+                    if i == 1:
+                        raise
+
+        src_code = filename = None
+        modpath = key.replace('.', '/')
+
+        for location in [options.basedir, options.libdir]:
+            if location:
+                data, filename = safe_read(location + '/' + modpath)
+                if data is not None:
+                    src_code = data
+                    break
+        if src_code is None:
+            raise "Failed Import: '" + key + "' module doesn't exist in either '" + options.basedir + "' or '" + options.libdir + "'"
+        contents = parse(src_code, {
+                filename: filename,
+                toplevel: None,
                 readfile: options.readfile,
                 basedir: options.basedir,
-                libdir: options.libdir
-            })
-        except as e:
-            if not e.message.search("no such file or directory"):
-                raise
-
-            try:
-                contents = parse(options.readfile(options.libdir + "/" + file, "utf-8"), {
-                    # didn't find it in local directory, check libs
-                    filename: file,
-                    toplevel: contents,
-                    readfile: options.readfile,
-                    basedir: options.libdir,
-                    libdir: options.libdir
-                })
-            except as e:
-                if e.message.search("no such file or directory"):
-                    raise "Failed Import: '" + tmp.name + "' module doesn't exist in either '" + options.basedir + "' or '" + options.libdir + "'"
-                else:
-                    raise
-
-
-
-        return new AST_Import({
-            module: name,
-            argnames: None,
-            body: contents,
-            variables: def():
-                # detect publically-seen variables
-                return scan_for_local_vars(contents, True).filter(def(element, index, arr):
-                    return arr.lastIndexOf(element) is index
-                )
-            .call(this)
+                libdir: options.libdir,
+                module_id: key,
+                IMPORTED: IMPORTED,
+                IMPORTING: IMPORTING,
         })
+        if len(package_module_id) > 0:
+            IMPORTED[package_module_id].submodules.push(key)
 
-    from_import_ = def():
-        name = expression(False)
-        file = ".pyj"
-        while isinstance(name, AST_Dot):
-            file = "/" + name.property + file
-            name = name.expression
 
-        file = name.name + file
-        expect_token("keyword", "import")
-        contents = None
-        try:
-            contents = parse(options.readfile(options.basedir + "/" + file, "utf-8"), {
-                filename: file,
-                toplevel: contents,
-                readfile: options.readfile,
-                basedir: options.basedir,
-                libdir: options.libdir
+    import_ = def(from_import):
+        ans = new AST_Imports({'imports':[]})
+        while True:
+            tmp = name = expression(False)
+            key = ''
+            while isinstance(tmp, AST_Dot):
+                key = "." + tmp.property + key
+                tmp = tmp.expression
+            key = tmp.name + key
+            alias = None
+            if not from_import and is_('keyword', 'as'):
+                next()
+                alias = as_symbol(AST_SymbolAlias)
+            imp = new AST_Import({
+                'module': name,
+                'key': key,
+                'alias': alias,
+                'argnames':None,
+                'body':def():
+                    return IMPORTED[key]
             })
-        except:
-            contents = parse(options.readfile(options.libdir + "/" + file, "utf-8"), {
-                # didn't find it in local directory, check libs
-                filename: file,
-                toplevel: contents,
-                readfile: options.readfile,
-                basedir: options.libdir,
-                libdir: options.libdir
-            })
+            ans.imports.push(imp)
+            if from_import:
+                break
+            if is_('punc', ','):
+                next()
+            else:
+                break
 
-        return new AST_Import({
-            module: name,
-            argnames: def(a):
-                a.push(as_symbol(AST_SymbolVar))
-                while is_("punc", ","):
-                    next()
-                    a.push(as_symbol(AST_SymbolVar))
-                return a
-            .call(this, []),
-            body: contents
-        })
+        for imp in ans['imports']:
+            do_import(imp.key)
+            classes = IMPORTED[key].classes
+            if from_import:
+                expect_token("keyword", "import")
+                imp.argnames = argnames = []
+                while True:
+                    aname = as_symbol(AST_ImportedVar)
+                    if is_('keyword', 'as'):
+                        next()
+                        aname.alias = as_symbol(AST_SymbolAlias)
+                    argnames.push(aname)
+                    if is_('punc', ','):
+                        next()
+                    else:
+                        break
 
-    ModuleTreeNode = def():
-        pass
-    # this exists to allow 'instanceof' check from within get_class_in_scope()
-    module_ = def(use_name):
-        name = use_name ? use_name : as_symbol(AST_SymbolDefun)
-        if not name:
-            unexpected()
+                # Put imported class names in the outermost scope
+                for argvar in argnames:
+                    obj = classes[argvar.name]
+                    if obj:
+                        key = (argvar.alias) ? argvar.alias.name : argvar.name
+                        S.classes[-1][key] = { "static": obj.static, bound: obj.bound }
+            else:
+                for i in dir(classes):
+                    obj = classes[i]
+                    if isinstance(obj, AST_Class):
+                        key = (imp.alias) ? imp.alias.name : imp.key
+                        S.classes[-1][key + '.' + obj.name.name] = { 'static': obj.static, bound: obj.bound }
 
-        # detect external modules
-        externaldecorator = S.decorators.indexOf("external")
-        if externaldecorator != -1:
-            S.decorators.splice(externaldecorator, 1)
+        return ans
 
-        definition = new AST_Module({
-            name: name,
-            body: def():
-                # navigate to correct location in the module tree and append the module
-                module_tree = S.module_tree
-                S.module_stack.forEach(def(module__):
-                    nonlocal module_tree
-                    module_tree = module_tree[module__]
-                )
-                module_tree[name.name] = new ModuleTreeNode()
-                S.module_stack.push(name.name)
-                a = block_()
-                S.module_stack.pop()
-                return a
-            .call(this),
-            external: externaldecorator != -1,
-            decorators: def():
-                d = []
-                S.decorators.forEach(def(decorator):
-                    d.push(new AST_Decorator({
-                        name: decorator
-                    }))
-                )
-                S.decorators = []
-                return d
-            .call(this),
-            variables: [],
-            localvars: []
-        })
-        # detect publically-seen variables
-        definition.variables = scan_for_local_vars(definition.body, True).filter(def(element, index, arr):
-            return arr.lastIndexOf(element) is index
-        )
-        definition.localvars = scan_for_local_vars(definition.body, False).filter(def(element, index, arr):
-            return arr.lastIndexOf(element) is index
-        ).map(def(element):
-            return new_symbol(AST_SymbolVar, element)
-        )
-        return definition
 
     class_ = def():
         name = as_symbol(AST_SymbolDefun)
@@ -1498,9 +1590,12 @@ def parse($TEXT, options):
             "static": [],
             bound: {}
         }
+
+        # class setup
         definition = new AST_Class({
             name: name,
-            parent: def():
+            module_id:module_id,
+            parent: (def():
                 if is_("punc", "("):
                     next()
                     a = expr_atom(False)
@@ -1508,30 +1603,28 @@ def parse($TEXT, options):
                     return a
                 else:
                     return None
-            .call(this),
-            modules: S.module_stack.slice(),
+            )(),
             localvars: [],
             "static": class_details.static,
             external: externaldecorator != -1,
             bound: class_details.bound,
-            decorators: def():
+            statements: [],
+            decorators: (def():
                 d = []
                 S.decorators.forEach(def(decorator):
+                    if decorator == 'kwargs':
+                        BASELIB['kwargs'] = True
                     d.push(new AST_Decorator({
                         name: decorator
                     }))
                 )
                 S.decorators = []
                 return d
-            .call(this),
-            body: def(loop, labels):
+            )(),
+            body: (def(loop, labels):
                 # navigate to correct location in the module tree and append the class
-                module_tree = S.module_tree
-                S.module_stack.forEach(def(module__):
-                    nonlocal module_tree
-                    module_tree = module_tree[module__]
-                )
-                module_tree[name.name] = class_details
+
+                # state "push"
                 S.in_class.push(name.name)
                 S.classes[S.classes.length - 1][name.name] = class_details
                 S.classes.push({})
@@ -1539,21 +1632,55 @@ def parse($TEXT, options):
                 S.in_directives = True
                 S.in_loop = 0
                 S.labels = []
+
                 a = block_()
+
+                # state "pop"
                 S.in_function -= 1
                 S.classes.pop()
                 S.in_class.pop()
                 S.in_loop = loop
                 S.labels = labels
+
                 return a
-            .call(this, S.in_loop, S.labels)
+            )(S.in_loop, S.labels)
         })
+
         # find the constructor
         for i in dir(definition.body):
             stmt = definition.body[i]
             if isinstance(stmt, AST_Method) and stmt.name.name == "__init__":
                 definition.init = stmt
                 break
+
+        # find class variables
+        class_var_names = {}
+        # Ensure that if a class variable refers to another class variable in
+        # its initialization, the referenced variables' names are correctly
+        # mangled.
+        def walker():
+            this._visit = def(node, descend):
+                if isinstance(node, AST_Method):
+                    class_var_names[node.name.name] = True
+                    return
+                elif isinstance(node, AST_Assign) and isinstance(node.left, AST_SymbolRef):
+                    class_var_names[node.left.name] = True
+
+                for child in node:
+                    if isinstance(node[child], AST_SymbolRef) and Object.prototype.hasOwnProperty.call(class_var_names, node[child].name):
+                        node[child] = new AST_SymbolClassRef({
+                            'class': name,
+                            'name': node[child].name
+                        })
+                if descend:
+                    descend.call(node)
+        visitor = new walker()
+
+        for stmt in definition.body:
+            if not isinstance(stmt, AST_Class) and not isinstance(stmt, AST_Method):
+                stmt.walk(visitor)
+                definition.statements.push(stmt)
+
         return definition
 
     function_ = def(in_class, ctor):
@@ -1579,32 +1706,64 @@ def parse($TEXT, options):
 
         definition = new ctor({
             name: name,
-            argnames: def(a):
+            argnames: (def(a):
                 defaults = {}
                 first = True
+                seen_names = {}
+
+                def get_arg():
+                    if Object.prototype.hasOwnProperty.call(seen_names, S.token.value):
+                        token_error(prev(), "Can't repeat parameter names")
+                    if S.token.value == 'arguments':
+                        token_error(prev(), "Can't use the name arguments as a parameter name, it is reserved by JavaScript")
+                    seen_names[S.token.value] = True
+                    return as_symbol(AST_SymbolFunarg)
+
                 while not is_("punc", ")"):
                     if first:
                         first = False
                     else:
                         expect(",")
-                    if a.starargs:
-                        token_error(prev(), "Can't define multiple *args in function definition")
-                    elif is_("operator", "*"):
+                    if is_('operator', '**'):
+
+                        # FIXME: temporary assertion while I get the logic tested and out the door
+                        token_error(prev(), "**kwargs in function definition is not implemented yet, work in progress")
+
+                        # **kwargs
                         next()
-                        a.starargs = as_symbol(AST_SymbolFunarg)
+                        if a.kwargs:
+                            token_error(prev(), "Can't define multiple **kwargs in function definition")
+                        a.kwargs = get_arg()
+                    elif is_('operator', '*'):
+                        # *args
+                        next()
+                        if a.starargs:
+                            token_error(prev(), "Can't define multiple *args in function definition")
+                        if a.kwargs:
+                            token_error(prev(), "Can't define *args after **kwargs in function definition")
+                        a.starargs = get_arg()
                     else:
-                        a.push(as_symbol(AST_SymbolFunarg))
+                        if a.starargs or a.kwargs:
+                            token_error(prev(), "Can't define a formal parameter after *args or **kwargs")
+                        a.push(get_arg())
                         if is_("operator", "="):
+                            if a.kwargs:
+                                token_error(prev(), "Can't define an optional formal parameter after **kwargs")
                             val = prev().value
                             next()
                             defaults[val] = expression(False)
+                            a.has_defaults = True
+                        else:
+                            if a.has_defaults:
+                                token_error(prev(), "Can't define required formal parameters after optional formal parameters")
 
                 next()
                 a.defaults = defaults
                 return a
-            .call(this, []),
+            )([]),
+            generator: False,
             localvars: [],
-            decorators: def():
+            decorators: (def():
                 d = []
                 S.decorators.forEach(def(decorator):
                     d.push(new AST_Decorator({
@@ -1613,22 +1772,29 @@ def parse($TEXT, options):
                 )
                 S.decorators = []
                 return d
-            .call(this),
-            body: def(loop, labels):
+            )(),
+            body: (def(loop, labels):
+                # parse function content
+
+                # state "push"
                 S.in_class.push(False)
                 S.classes.push({})
                 S.in_function += 1
                 S.in_directives = True
                 S.in_loop = 0
                 S.labels = []
+
                 a = block_()
+
+                # state "pop"
                 S.in_function -= 1
                 S.classes.pop()
                 S.in_class.pop()
                 S.in_loop = loop
                 S.labels = labels
+
                 return a
-            .call(this, S.in_loop, S.labels)
+            )(S.in_loop, S.labels)
         })
         if isinstance(definition, AST_Method):
             definition.static = staticmethod
@@ -1703,7 +1869,11 @@ def parse($TEXT, options):
 
                 cur = []
                 branch = new AST_Case({
-                    start: (tmp = S.token, next(), tmp),
+                    start: (def():
+                        tmp = S.token
+                        next()
+                        return tmp
+                    )(),
                     expression: expression(True),
                     body: cur
                 })
@@ -1715,7 +1885,12 @@ def parse($TEXT, options):
 
                 cur = []
                 branch = new AST_Default({
-                    start: (tmp = S.token, next(), expect(":"), tmp),
+                    start: (def():
+                        tmp = S.token
+                        next()
+                        expect(":")
+                        return tmp
+                    )(),
                     body: cur
                 })
                 a.push(branch)
@@ -1781,7 +1956,7 @@ def parse($TEXT, options):
         while True:
             a.push(new AST_VarDef({
                 start: S.token,
-                name: as_symbol((in_const ? AST_SymbolConst : AST_SymbolVar)),
+                name: as_symbol(in_const ? AST_SymbolConst : AST_SymbolVar),
                 value: (is_("operator", "=") ? (next(), expression(False, no_in)) : None),
                 end: prev()
             }))
@@ -1789,21 +1964,6 @@ def parse($TEXT, options):
                 break
             next()
 
-        return a
-
-    def new_vardefs(no_in, in_const):
-        a = []
-        while True:
-            a.push(new AST_VarDef({
-                start: S.token,
-                name: new_symbol((in_const ? AST_SymbolConst : AST_SymbolVar)),
-                value: (is_("operator", "=") ? (next(), expression(False, no_in)) : None),
-                end: prev()
-            }))
-            if not is_("punc", ","):
-                break
-
-            next()
         return a
 
     nonlocal_ = def(no_in):
@@ -1838,11 +1998,11 @@ def parse($TEXT, options):
             end: prev()
         }), True)
 
-    def as_atom_node():
-        tok = S.token
+    def as_atom_node(token):
+        tok = token or S.token
         tmp_ = tok.type
         if tmp_ == "name":
-            return as_symbol(AST_SymbolRef)
+            ret = as_symbol(AST_SymbolRef, token=tok)
         elif tmp_ == "num":
             ret = new AST_Number({
                 start: tok,
@@ -1879,7 +2039,8 @@ def parse($TEXT, options):
                     end: tok
                 })
 
-        next()
+        if not token:
+            next()
         return ret
 
     expr_atom = def(allow_calls):
@@ -1894,6 +2055,8 @@ def parse($TEXT, options):
                 ex = expression(True)
                 ex.start = start
                 ex.end = S.token
+                if isinstance(ex, AST_SymbolRef):
+                    ex.parens = True
                 expect(")")
                 return subscripts(ex, allow_calls)
             elif tmp_ == "[":
@@ -1954,8 +2117,11 @@ def parse($TEXT, options):
             tmp.kwargs = []
             for i, arg in enumerate(a):
                 if isinstance(arg, AST_Assign):
+                    # arg=val
+                    BASELIB['kwargs'] = True
                     tmp.kwargs.push([arg.left, arg.right])
                 else:
+                    # regular argument
                     tmp.push(arg)
             a = tmp
 
@@ -1965,7 +2131,51 @@ def parse($TEXT, options):
         return a
 
     def func_call_list():
-        return expr_list(")", False, False, True)
+        a = []
+        first = True
+        a.kwargs = []
+        a.kwarg_items = kwargs = []
+        a.starargs = False
+        while not is_("punc", ')'):
+            if first:
+                first = False
+            else:
+                expect(",")
+            if is_('operator', '*'):
+                # starargs argument
+                next()
+                arg = expression(False)
+                arg.is_array = True
+                a.push(arg)
+                a.starargs = True
+            elif is_('operator', '**'):
+                # kwargs argument
+                BASELIB['kwargs'] = True
+                next()
+                kwargs.push(as_symbol(AST_SymbolVar, False))
+            else:
+                # arg=val assignment
+                arg = expression(False)
+                if isinstance(arg, AST_Assign):
+                    BASELIB['kwargs'] = True
+                    a.kwargs.push([arg.left, arg.right])
+                else:
+                    a.push(arg)
+        next()
+        return a
+
+    def read_comprehension(object):
+        # shared by list and dict comprehensions
+        terminator = isinstance(object, AST_DictComprehension) ? '}' : ']'
+        expect_token('keyword', 'for')
+        forloop = for_(True)
+        BASELIB["iterable"] = True
+        object.init = forloop.init
+        object.name = forloop.name
+        object.object = forloop.object
+        object.condition = is_("punc", terminator) ? None : (expect_token("keyword", "if"), expression(True))
+        expect(terminator)
+        return object
 
     array_ = embed_tokens(def():
         expect("[")
@@ -1974,19 +2184,11 @@ def parse($TEXT, options):
             expr.push(expression(False))
             if is_("keyword", "for"):
                 # list comprehension
-                next()
-                forloop = for_(True)
-                ret = new AST_ListComprehension({
-                    statement: expr[0],
-                    init: forloop.init,
-                    name: forloop.name,
-                    object: forloop.object,
-                    condition: (is_("punc", "]") ? None : (expect_token("keyword", "if"), expression(True)))
-                })
-                expect("]")
-                return ret
+                return read_comprehension(new AST_ListComprehension({ statement: expr[0] }))
 
             if is_("operator", "til"):
+                # up to but not including upper limit
+                BASELIB['range'] = True
                 next()
                 expr.push(expression(False))
                 ret = subscripts(new AST_Call({
@@ -2000,12 +2202,14 @@ def parse($TEXT, options):
                 expect("]")
                 return ret
             elif is_("operator", "to"):
+                # now add a tiny number to make sure we include the upper limit
+                BASELIB['range'] = True
                 next()
                 expr.push(new AST_Binary({
                     left: expression(False),
                     operator: "+",
                     right: new AST_Number({
-                        value: 1
+                        value: 0.000001
                     })
                 }))
                 ret = subscripts(new AST_Call({
@@ -2026,13 +2230,12 @@ def parse($TEXT, options):
         })
     )
     object_ = embed_tokens(def():
+        maybe_dict_comprehension = False
         expect("{")
         first = True
         a = []
         while not is_("punc", "}"):
-            if first:
-                first = False
-            else:
+            if not first:
                 expect(",")
             if not options.strict and is_("punc", "}"):
                 # allow trailing comma
@@ -2040,9 +2243,16 @@ def parse($TEXT, options):
 
             start = S.token
             type = start.type
-            key = as_property_name()
-            name = key.value
-            quoted = (key.type == "string" ? True : False)
+            if first and peek().value != ':':
+                # possibly dict comprehension
+                maybe_dict_comprehension = True
+                key = expression(False)
+                name = None
+            else:
+                key = as_property_name()
+                name = key.value
+                quoted = key.type == "string"
+
             if type == "name" and not is_("punc", ":"):
                 if name == "get":
                     a.push(new AST_ObjectGetter({
@@ -2065,6 +2275,7 @@ def parse($TEXT, options):
                     continue
 
             expect(":")
+
             a.push(new AST_ObjectKeyVal({
                 start: start,
                 key: name,
@@ -2072,6 +2283,14 @@ def parse($TEXT, options):
                 value: expression(False),
                 end: prev()
             }))
+
+            if a.length == 1 and is_('keyword', 'for'):
+                return read_comprehension(new AST_DictComprehension({
+                    statement: maybe_dict_comprehension ? key : as_atom_node(a[0].start),
+                    value_statement: a[0].value
+                }))
+
+            first = False
 
         next()
         return new AST_Object({
@@ -2097,32 +2316,34 @@ def parse($TEXT, options):
         else:
             unexpected()
 
-    def as_symbol(type, noerror):
-        if not is_("name"):
+    def as_symbol(type, noerror, token):
+        token_ = token or S.token
+        if not is_token(token_, "name"):
             if not noerror:
                 croak("Name expected")
             return None
 
-        name = S.token.value
-        sym = new ((name == "this" ? AST_This : type))({
-            name: JS("String(S.token.value)"),
-            start: S.token,
-            end: S.token
+        name = token_.value
+        sym = new (name == "this" ? AST_This : type)({
+            name: (String)(token_.value),
+            start: token_,
+            end: token_
         })
-        next()
+        if not token:
+            next()
         return sym
 
     # for generating/inserting a new symbol
     def new_symbol(type, name):
         sym = new ((name == "this" ? AST_This : type))({
-            name: JS("String(name)"),
+            name: (String)(name),
             start: None,
             end: None
         })
         return sym
 
     def is_static_method(cls, method):
-        if cls.static and cls.static.indexOf(method) != -1:
+        if COMMON_STATIC.indexOf(method) != -1 or cls.static and cls.static.indexOf(method) != -1:
             return True
         else:
             return False
@@ -2144,37 +2365,87 @@ def parse($TEXT, options):
             is_slice = False
             if is_("punc", ":"):
                 # slice [:n]
-                slice_bounds.push(new AST_Number({
-                    value: 0
-                }))
+                slice_bounds.push(None)
             else:
+                # slice [n?]
                 slice_bounds.push(expression(False))
 
             if is_("punc", ":"):
                 # slice [n:m?]
                 is_slice = True
                 next()
-                if not is_("punc", "]"):
+                if is_("punc", ":"):
+                    slice_bounds.push(None)
+                elif not is_("punc", "]"):
+                    slice_bounds.push(expression(False))
+
+            if is_("punc", ":"):
+                # slice [n:m:o?]
+                BASELIB["eslice"] = True
+                next()
+                if is_("punc", "]"):
+                    unexpected()
+                else:
                     slice_bounds.push(expression(False))
 
             expect("]")
+
             if is_slice:
-                return subscripts(new AST_Call({
-                    start: start,
-                    expression: new AST_Dot({
+                if is_("operator") and S.token.value == "=":
+                    # splice-assignment (arr[start:end] = ...)
+                    next()  # swallow the assignment
+                    return subscripts(new AST_Splice({
                         start: start,
                         expression: expr,
-                        property: "slice",
+                        property: slice_bounds[0] or new AST_Number({
+                            value: 0
+                        }),
+                        property2: slice_bounds[1],
+                        assignment: expression(True),
                         end: prev()
-                    }),
-                    args: slice_bounds,
-                    end: prev()
-                }), allow_calls)
+                    }), allow_calls)
+                elif slice_bounds.length == 3:
+                    # extended slice (arr[start:end:step])
+                    slice_bounds.unshift(slice_bounds.pop())
+                    if not slice_bounds[-1]:
+                        slice_bounds.pop()
+                        if not slice_bounds[-1]:
+                            slice_bounds.pop()
+                    elif not slice_bounds[-2]:
+                        slice_bounds[-2] = new AST_Undefined()
+
+                    return subscripts(new AST_Call({
+                        start: start,
+                        expression: new AST_SymbolRef({
+                            name: "eslice"
+                        }),
+                        args: [expr].concat(slice_bounds),
+                        end: prev()
+                    }), allow_calls)
+                else:
+                    # regular slice (arr[start:end])
+                    slice_bounds = [i == None ? new AST_Number({
+                        value: 0
+                    }) : i for i in slice_bounds]
+                    return subscripts(new AST_Call({
+                        start: start,
+                        expression: new AST_Dot({
+                            start: start,
+                            expression: expr,
+                            property: "slice",
+                            end: prev()
+                        }),
+                        args: slice_bounds,
+                        end: prev()
+                    }), allow_calls)
             else:
+                # regular index (arr[index])
                 return subscripts(new AST_Sub({
                     start: start,
                     expression: expr,
-                    property: slice_bounds[0],
+                    property: slice_bounds[0] or new AST_Number({
+                        value: 0
+                    }),
                     end: prev()
                 }), allow_calls)
 
@@ -2193,8 +2464,16 @@ def parse($TEXT, options):
                 })
                 expect(")")
                 return subscripts(ret, True)
-            elif get_class_in_scope(expr):
+            elif not expr.parens and get_class_in_scope(expr):
                 # this is an object being created using a class
+
+                # check if this class is part of our standard library
+                if expr.name in STDLIB:
+                    BASELIB[expr.name] = True
+                    if /Error$/.test(expr.name):
+                        # errors are classes
+                        BASELIB["extends"] = True
+
                 return subscripts(new AST_New({
                     start: start,
                     expression: expr,
@@ -2221,21 +2500,9 @@ def parse($TEXT, options):
                     }), True)
                 elif isinstance(expr, AST_SymbolRef):
                     tmp_ = expr.name
-                    if tmp_ == "abs"
-                    or tmp_ == "bind"
-                    or tmp_ == "rebind_all"
-                    or tmp_ == "dir"
-                    or tmp_ == "enumerate"
-                    or tmp_ == "len"
-                    or tmp_ == "mixin"
-                    or tmp_ == "print"
-                    or tmp_ == "range"
-                    or tmp_ == "reversed"
-                    or tmp_ == "getattr"
-                    or tmp_ == "setattr"
-                    or tmp_ == "hasattr":
-                        # special functions that trigger addition of extra logic to generated JavaScript
-                        BASELIB[expr.name] = True
+                    # special functions that trigger addition of extra logic to generated JavaScript
+                    if tmp_ in STDLIB:
+                        BASELIB[tmp_] = True
                         # NOTE: there is intentionally no return here, we want these functions to go through regular logic
                         # after they trigger the appropriate baselib flag
                     elif tmp_ == "type":
@@ -2270,7 +2537,7 @@ def parse($TEXT, options):
         if is_("operator") and UNARY_PREFIX(start.value):
             next()
             if start.value == "@":
-                if is_("name") and (peek().value == "@" or peek().value == "def" or peek().value == "class" or peek().value == "module"):
+                if is_("name") and (peek().value == "@" or peek().value == "def" or peek().value == "class"):
                     S.decorators.push(S.token.value)
                     next()
                     return new AST_EmptyStatement()
@@ -2391,18 +2658,20 @@ def parse($TEXT, options):
                     # AST_Seq representation is ugly to decode for
                     # assignments, let's convert data to array now
                     # to avoid dealing with it
-                    #                    return new AST_TupleUnpack({
-                    #                        start    : start,
-                    #                        elements : left,
-                    #                        right    : expression(true, no_in),
-                    #                        end      : peek()
-                    #                    });
-                    left[left.length - 1] = left.slice(-1)[0].left
+                    left[-1] = left[-1].left
+                    if left.length == 1:
+                        if isinstance(left[0], AST_Seq):
+                            leftAst = seq_to_array(left[0])
+                        else:
+                            leftAst = left[0]
+                    else:
+                        leftAst = new AST_Array({
+                            elements: left
+                        })
+
                     return new AST_Assign({
                         start: start,
-                        left: (left.length == 1 ? left[0] : new AST_Array({
-                            elements: left
-                        })),
+                        left: leftAst,
                         operator: expr.operator,
                         right: new AST_Seq({
                             car: expr.right,
@@ -2414,9 +2683,13 @@ def parse($TEXT, options):
                 expr = maybe_assign(no_in)
                 left.push(expr)
 
+            # transform assignments to (a, b, ...) into [a, b, ...]
+            if isinstance(expr, AST_Assign) and isinstance(expr.left, AST_Seq):
+                expr.left = seq_to_array(expr.left)
+
             # if last one was an assignment, fix it
-            if left.length > 1 and isinstance(left.slice(-1)[0], AST_Assign):
-                left[left.length - 1] = left.slice(-1)[0].left
+            if left.length > 1 and isinstance(left[-1], AST_Assign):
+                left[left.length - 1] = left[-1].left
                 return new AST_Assign({
                     start: start,
                     left: new AST_Array({
@@ -2427,7 +2700,8 @@ def parse($TEXT, options):
                     end: peek()
                 })
 
-            return def build_seq(a):
+            #recursive sequence formation
+            return (def build_seq(a):
                 if a.length == 1:
                     return a[0]
 
@@ -2437,7 +2711,8 @@ def parse($TEXT, options):
                     cdr: build_seq(a),
                     end: peek()
                 })
-            .call(this, left)
+            )(left)
+
         return expr
 
     def in_loop(cont):
@@ -2477,16 +2752,26 @@ def parse($TEXT, options):
                 end: end
             })
 
-        assignments = scan_for_local_vars(toplevel.body, False).filter(def(element, index, arr):
-            return arr.lastIndexOf(element) is index
-        )
+        def uniq(element, index, arr):
+            return arr.lastIndexOf(element) == index
+
+        toplevel.nonlocalvars = scan_for_nonlocal_defs(toplevel.body)
+        assignments = scan_for_local_vars(toplevel.body).filter(uniq)
+        callables = scan_for_top_level_callables(toplevel.body).filter(uniq)
         toplevel.localvars = []
         assignments.forEach(def(item):
-            toplevel.localvars.push(new_symbol(AST_SymbolVar, item))
+            if (toplevel.nonlocalvars.indexOf(item) < 0):
+                toplevel.localvars.push(new_symbol(AST_SymbolVar, item))
         )
+        toplevel.exports = toplevel.localvars.concat(callables).filter(uniq)
+        toplevel.submodules = []
+        toplevel.classes = scan_for_classes(toplevel.body)
+        toplevel.import_order = Object.keys(IMPORTED).length
+        toplevel.module_id = module_id
+        IMPORTED[module_id] = toplevel
         toplevel.imports = IMPORTED
         toplevel.baselib = BASELIB
+        IMPORTING[module_id] = False
         return toplevel
     .call(this)
-
 
