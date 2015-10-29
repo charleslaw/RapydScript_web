@@ -91,38 +91,29 @@ def factorial(n):
 
       //RapydScript options
       var rs_options = {
-        "filename":"demo.pyj",
-        "module_id": "demo",
-	toplevel: null,
-        "basedir": [],
-        "libdir": [],
-        IMPORTED: {},
-        IMPORTING: {}
-      };
-      var output_opts = {
-        "beautify":true,
-        "private_scope":false,
-        baselib: parse_baselib(),
+        filename: "demo.pyj",
+	    toplevel: undefined,
+        basedir: '.',
+        auto_bind: false,
+        es6: false
       };
 
       function updatePreview(from_error) {
-        var rapydscript_string = editor.getValue();
-        output = OutputStream(output_opts)
-        rapydscript_string += '\n'; //just to be safe
-        try {
           BASELIB = {}
           INDEX_COUNTER = 0
+          var output_opts = {
+            beautify: true,
+            private_scope: false,
+            baselib: parse_baselib(),
+            auto_bind: false,
+            omit_baselib: false
+          };
+          var rapydscript_string = editor.getValue();
+          output = OutputStream(output_opts)
+          rapydscript_string += '\n'; //just to be safe
           TOPLEVEL = parse(rapydscript_string, rs_options);
           TOPLEVEL.print(output);
-          preview.setValue(String(output) + '\n');
-        } catch(err) {
-          if (from_error) {
-              preview.setValue("ERROR: " + err.message + ". Line " + err.line + ", column " + err.col + ".");
-          } else {
-            clearTimeout(delay);
-            delay = setTimeout(function(){updatePreview(true);}, 2000);
-          }
-        }
+          preview.setValue(String(output.get()) + '\n');
       }
 
       updatePreview();
